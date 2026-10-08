@@ -1,0 +1,3 @@
+# Only needed for the optional Python tools in tools/ (index.html needs nothing)
+numpy>=1.24
+matplotlib>=3.7

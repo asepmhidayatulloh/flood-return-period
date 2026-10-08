@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Return-Period Flood Simulator | Flood Extent, Depth and Flow</title>
+<meta name="description" content="Browser-based flood simulation: compare flood extent, depth and animated flow vectors for 2, 5, 10, 25, 50, 100 and 200-year return periods.">
+<style>
+:root{
+  --bg:#e9eef2; --panel:#f7f9fb; --ink:#12263a; --muted:#546577; --line:#c6d1da;
+  --accent:#0a6f9e; --accent-soft:#d7ecf6; --soft:#dde6ed; --ground:#a79c85; --grid:#d5dde4;
+  --warn:#9a4a08;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0d1821; --panel:#13232f; --ink:#e2ebf2; --muted:#93a7b7; --line:#28394a;
+    --accent:#4cc0ee; --accent-soft:#17384b; --soft:#1b2f3e; --ground:#6d6556; --grid:#1f3242;
+    --warn:#f0a35e;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0d1821; --panel:#13232f; --ink:#e2ebf2; --muted:#93a7b7; --line:#28394a;
+  --accent:#4cc0ee; --accent-soft:#17384b; --soft:#1b2f3e; --ground:#6d6556; --grid:#1f3242;
+  --warn:#f0a35e;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;font-variant-numeric:tabular-nums}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:20px 24px 14px;max-width:1440px;margin:0 auto}
+.top h1{margin:0;font-size:1.45rem;line-height:1.2;letter-spacing:-.01em}
+.top .sub{margin:6px 0 0;color:var(--muted);max-width:70ch}
+.ghost{background:transparent;border:1px solid var(--line);border-radius:4px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+.ghost:hover{background:var(--soft)}
+
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;padding:0 24px 24px;max-width:1440px;margin:0 auto;align-items:start}
+@media (max-width:1000px){.layout{grid-template-columns:1fr;padding:0 14px 20px}.top{padding:16px 14px 10px}}
+.stack{display:grid;gap:14px;min-width:0}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:14px}
+.panel h2{margin:0 0 10px;font-size:.98rem;font-weight:650}
+.hint{color:var(--muted);font-size:.82rem;margin:8px 0 0}
+
+/* return-period gauge */
+.gauge{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.t-btn{position:relative;overflow:hidden;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:8px 2px 12px;text-align:center;cursor:pointer;line-height:1.15}
+.t-btn:hover{border-color:var(--accent)}
+.t-btn[aria-pressed="true"]{background:var(--accent-soft);box-shadow:inset 0 0 0 2px var(--accent);border-color:var(--accent)}
+.t-btn .n{display:block;font-size:1.45rem;font-weight:700}
+.t-btn .u{display:block;font-size:.72rem;color:var(--muted)}
+.t-btn .q{display:block;font-size:.74rem;margin-top:4px}
+.t-btn .lv{position:absolute;left:0;bottom:0;height:5px;background:var(--accent);opacity:.7;width:0;transition:width .25s}
+@media (prefers-reduced-motion: reduce){.t-btn .lv{transition:none}}
+@media (max-width:640px){.t-btn .n{font-size:1.1rem}.t-btn .q{font-size:.62rem}.t-btn .u{font-size:.62rem}}
+
+.modes{display:flex;flex-wrap:wrap;gap:0;margin-top:10px;border:1px solid var(--line);border-radius:4px;overflow:hidden;width:max-content;max-width:100%}
+.modes button{background:var(--bg);border:0;border-right:1px solid var(--line);padding:7px 12px;cursor:pointer;font-size:.88rem}
+.modes button:last-child{border-right:0}
+.modes button[aria-pressed="true"]{background:var(--accent);color:#fff;font-weight:600}
+:root[data-theme="dark"] .modes button[aria-pressed="true"]{color:#06222f}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .modes button[aria-pressed="true"]{color:#06222f}}
+
+.flowctl{display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center;margin-top:10px;font-size:.88rem}
+.flowctl label{display:inline-flex;align-items:center;gap:6px}
+.flowctl input[type=range]{width:120px}
+.flowctl input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
+
+.mapwrap{position:relative;margin-top:10px;border:1px solid var(--line);border-radius:4px;overflow:hidden;background:#dfe5d6;line-height:0}
+#map{width:100%;height:auto;display:block;cursor:crosshair;touch-action:pan-y}
+.mapwrap canvas.ov{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+.legend{position:absolute;left:10px;bottom:10px;background:rgba(255,255,255,.9);color:#12263a;padding:6px 9px;border-radius:4px;font-size:.74rem;line-height:1.35;max-width:62%;box-shadow:0 0 0 1px rgba(18,38,58,.18)}
+.legend .bar{height:10px;width:190px;border-radius:2px;margin:3px 0 2px;box-shadow:0 0 0 1px rgba(18,38,58,.25)}
+.legend .ticks{display:flex;justify-content:space-between;width:190px}
+.legend .sw{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:4px;box-shadow:0 0 0 1px rgba(18,38,58,.3)}
+.legend .row{display:inline-block;margin-right:10px;white-space:nowrap}
+.legend .note{margin-top:3px;color:#3d5164}
+.readout{margin-top:8px;font-size:.84rem;color:var(--muted);min-height:1.4em}
+.readout b{color:var(--ink);font-weight:600}
+.cmpctl{display:none;gap:12px 18px;flex-wrap:wrap;align-items:center;margin-top:10px;font-size:.88rem}
+.cmpctl.on{display:flex}
+.cmpctl label{display:inline-flex;align-items:center;gap:6px}
+.cmpctl select{background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:4px 6px}
+.cmpctl input[type=range]{width:170px}
+.summary{margin:10px 0 0;font-size:.9rem;display:none;padding:8px 10px;background:var(--accent-soft);border-left:3px solid var(--accent);border-radius:0 4px 4px 0}
+.summary.on{display:block}
+
+/* tabs + plot */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:10px;flex-wrap:wrap}
+.tabs button{background:transparent;border:0;border-bottom:3px solid transparent;padding:6px 10px;cursor:pointer;color:var(--muted)}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+#plot{width:100%;display:block}
+.plegend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.8rem;margin-top:6px;color:var(--muted)}
+.plegend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:5px;border-radius:2px}
+
+/* table */
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.86rem}
+th,td{padding:6px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+thead th{font-weight:600;color:var(--muted);font-size:.8rem}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:var(--soft)}
+tbody tr.sel{background:var(--accent-soft)}
+.tag{display:inline-block;font-size:.7rem;font-weight:700;border-radius:3px;padding:0 4px;margin-left:5px;background:var(--ink);color:var(--bg)}
+.row-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+
+/* params */
+.field{display:grid;grid-template-columns:1fr 96px;gap:8px;align-items:center;margin-bottom:8px;font-size:.88rem}
+.field input,.field select{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:5px 6px;text-align:right}
+.field select{text-align:left}
+.manual{display:none;margin-top:4px}
+.manual.on{display:block}
+.dl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;margin:0;font-size:.88rem}
+.dl dt{color:var(--muted)}
+.dl dd{margin:0;text-align:right;font-weight:600}
+input[type=range]{accent-color:var(--accent);width:100%}
+details summary{cursor:pointer;font-weight:600}
+details p,details li{font-size:.86rem;color:var(--muted)}
+details ul{padding-left:18px;margin:6px 0}
+.status{font-size:.8rem;color:var(--muted);height:1.2em}
+footer{max-width:1440px;margin:0 auto;padding:0 24px 28px;color:var(--muted);font-size:.82rem}
+@media (max-width:1000px){footer{padding:0 14px 24px}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div>
+    <h1>Return-Period Flood Simulator</h1>
+    <p class="sub">Compare flood extent, depth and flow direction for 2- to 200-year return periods in a synthetic river valley. Everything runs in your browser.</p>
+  </div>
+  <button id="themeBtn" class="ghost" type="button">Dark mode</button>
+</header>
+
+<div class="layout">
+  <main class="stack">
+    <section class="panel" aria-label="Flood map">
+      <h2>Select return period</h2>
+      <div class="gauge" id="gauge" role="group" aria-label="Return period"></div>
+
+      <div class="modes" id="modes" role="group" aria-label="Map view">
+        <button type="button" data-mode="depth" aria-pressed="true">Depth</button>
+        <button type="button" data-mode="extent" aria-pressed="false">Flood extent</button>
+        <button type="button" data-mode="layers" aria-pressed="false">All return periods</button>
+        <button type="button" data-mode="compare" aria-pressed="false">Compare A | B</button>
+        <button type="button" data-mode="diff" aria-pressed="false">Difference B &minus; A</button>
+      </div>
+
+      <div class="flowctl">
+        <label><input type="checkbox" id="chkArrows" checked> Flow arrows</label>
+        <label><input type="checkbox" id="chkAnim" checked> Animate flow</label>
+        <label>Flow speed <input type="range" id="fspeed" min="0.25" max="3" step="0.25" value="1" aria-label="Flow animation speed"></label>
+      </div>
+
+      <div class="cmpctl" id="cmpctl">
+        <label>A <select id="selA" aria-label="Return period A"></select></label>
+        <label>B <select id="selB" aria-label="Return period B"></select></label>
+        <span id="layerCtl">
+          <label><input type="radio" name="layer" value="depth" checked> Depth</label>
+          <label><input type="radio" name="layer" value="extent"> Flood extent</label>
+        </span>
+        <label id="splitCtl">Divider <input type="range" id="split" min="0" max="100" value="50" aria-label="Position of the A and B divider"></label>
+      </div>
+
+      <div class="mapwrap">
+        <canvas id="map" aria-label="Flood map. Click to choose the cross-section location."></canvas>
+        <canvas id="arrows" class="ov" aria-hidden="true"></canvas>
+        <canvas id="flow" class="ov" aria-hidden="true"></canvas>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="readout" id="readout">Move the cursor over the map to read elevation, depth and velocity. Click to choose a cross-section.</div>
+      <p class="summary" id="summary"></p>
+    </section>
+
+    <section class="panel" aria-label="Charts">
+      <div class="tabs" role="tablist" id="tabs">
+        <button role="tab" type="button" data-plot="xs" aria-selected="true">Cross-section</button>
+        <button role="tab" type="button" data-plot="prof" aria-selected="false">Longitudinal profile</button>
+        <button role="tab" type="button" data-plot="chart" aria-selected="false">Return period vs area and depth</button>
+      </div>
+      <canvas id="plot" aria-label="Simulation results chart"></canvas>
+      <div class="plegend" id="plegend"></div>
+    </section>
+
+    <section class="panel" aria-label="Results table">
+      <h2>Results by return period</h2>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Return period</th><th>Discharge (m&sup3;/s)</th><th>Area (ha)</th><th>Mean depth (m)</th><th>Max depth (m)</th><th>Volume (10&sup3; m&sup3;)</th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="row-actions">
+        <button class="ghost" type="button" id="csvBtn">Download table (CSV)</button>
+        <button class="ghost" type="button" id="pngBtn">Download map (PNG)</button>
+      </div>
+    </section>
+  </main>
+
+  <aside class="stack">
+    <section class="panel">
+      <h2>Hydrology and hydraulics</h2>
+      <div class="field"><label for="srcSel">Discharge source</label>
+        <select id="srcSel"><option value="gumbel">Gumbel distribution</option><option value="manual">Manual input</option></select></div>
+      <div id="gumbelBox">
+        <div class="field"><label for="pMean">Mean annual peak discharge (m&sup3;/s)</label><input id="pMean" type="number" value="300" min="5" step="10"></div>
+        <div class="field"><label for="pCv">Coefficient of variation (Cv)</label><input id="pCv" type="number" value="0.55" min="0.05" max="2" step="0.05"></div>
+      </div>
+      <div class="manual" id="manualBox">
+        <div id="manualFields"></div>
+        <p class="hint">Enter the peak discharge for each return period, for example from your HEC-HMS results.</p>
+      </div>
+      <div class="field"><label for="pS0">Channel bed slope (m/m)</label><input id="pS0" type="number" value="0.002" min="0.0002" max="0.02" step="0.0005"></div>
+      <div class="field"><label for="pNc">Manning n, channel</label><input id="pNc" type="number" value="0.035" min="0.01" max="0.2" step="0.005"></div>
+      <div class="field"><label for="pNf">Manning n, floodplain</label><input id="pNf" type="number" value="0.07" min="0.01" max="0.3" step="0.005"></div>
+      <div class="field"><label for="pCap">Max depth on colour scale (m)</label><input id="pCap" type="number" value="4" min="0.5" max="20" step="0.5"></div>
+      <div class="row-actions" style="margin-top:4px"><button class="ghost" type="button" id="resetBtn">Reset</button></div>
+      <div class="status" id="status" role="status"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Selected cross-section</h2>
+      <label for="station" class="hint" style="display:block;margin:0 0 4px">Distance from upstream (drag, or click the map)</label>
+      <input type="range" id="station" min="0" max="259" value="130">
+      <dl class="dl" id="secInfo" style="margin-top:10px"></dl>
+    </section>
+
+    <section class="panel">
+      <details>
+        <summary>How it works and limitations</summary>
+        <p>The valley terrain is generated synthetically (meandering channel, floodplain, natural levee, a low-lying depression and valley walls). For each return period:</p>
+        <ul>
+          <li>Peak discharge comes from the Gumbel quantile, Q<sub>T</sub> = mean &times; (1 + K<sub>T</sub> &times; Cv), or from your manual input.</li>
+          <li>At every cross-section the water surface elevation is found from Manning's equation with strip-wise conveyance, so channel and floodplain use different n.</li>
+          <li>The water surface is mapped across the grid. Only cells connected to the channel count as flooded.</li>
+          <li>Local velocity is v = h<sup>2/3</sup> &radic;S / n, directed along the valley axis. Arrows and animated tracer particles show this field. Animation speed is a visual time-lapse, not real time.</li>
+        </ul>
+        <p><b>This is an educational steady-flow model</b>, not a replacement for HEC-RAS. It has no flood-wave routing, backwater, bridges or true 2D flow. For real studies use a DEM, surveyed geometry and calibration.</p>
+      </details>
+    </section>
+  </aside>
+</div>
+
+<footer>A demonstration in a single HTML file with no external libraries. It can be published directly with GitHub Pages.</footer>
+
+<script>
+(function(){
+'use strict';
+
+/* ---------- constants ---------- */
+const NX=260, NY=150, DX=10;          // columns, rows, cell size (m)
+const SC=3, W=NX*SC, H=NY*SC;         // render scale
+const G=9.81;
+const TS=[2,5,10,25,50,100,200];
+const NT=TS.length, LAST=NT-1;
+const TCOL=['#1b3a8c','#2a6fd0','#17a9c4','#5cc45a','#f0b429','#ee5a36','#a21caf'];
+const FONT='"Segoe UI",system-ui,-apple-system,Arial,sans-serif';
+const DEFAULTS={mean:300,cv:0.55,S0:0.002,nc:0.035,nf:0.07,cap:4};
+const reduceMotion=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const fmt=(v,d=1)=>Number.isFinite(v)?v.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}):'-';
+const hexRGB=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+const TRGB=TCOL.map(hexRGB);
+const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* ---------- state ---------- */
+const st={ti:2,mode:'depth',A:0,B:LAST,layer:'depth',station:130,split:W/2,plot:'xs',arrows:true,animate:!reduceMotion,fspeed:1};
+let cur=Object.assign({src:'gumbel'},DEFAULTS);
+let lastS0=null;
+
+/* ---------- synthetic terrain ---------- */
+const terr={z:new Float32Array(NX*NY),isCh:new Uint8Array(NX*NY),yc:new Float32Array(NX),thal:new Float32Array(NX),jth:new Int16Array(NX),dirX:new Float32Array(NX),dirY:new Float32Array(NX)};
+const zPix=new Float32Array(W*H);
+const base=new Uint8ClampedArray(W*H*3);
+
+function hash(i,j){let h=(Math.imul(i,374761393)+Math.imul(j,668265263))^0x5bd1e995;h=Math.imul(h^(h>>>13),1274126177);return((h^(h>>>16))>>>0)/4294967295;}
+function vnoise(x,y){
+  const i=Math.floor(x),j=Math.floor(y),fx=x-i,fy=y-j,s=t=>t*t*(3-2*t);
+  const a=hash(i,j),b=hash(i+1,j),c=hash(i,j+1),d=hash(i+1,j+1);
+  return a+(b-a)*s(fx)+(c-a)*s(fy)+(a-b-c+d)*s(fx)*s(fy);
+}
+function buildTerrain(S0){
+  const {z,isCh,yc,thal,jth}=terr, bw=18;
+  for(let i=0;i<NX;i++){
+    const x=(i+.5)*DX;
+    yc[i]=750+120*Math.sin(2*Math.PI*x/1300+.6)+35*Math.sin(2*Math.PI*x/520);
+    let zmin=1e9,jm=0;
+    for(let j=0;j<NY;j++){
+      const y=(j+.5)*DX, d=y-yc[i], ad=Math.abs(d);
+      let h=100-S0*x;
+      if(ad<bw) h-=3.2*(1-(ad/bw)*(ad/bw));
+      h+=0.0042*Math.max(ad-bw,0);
+      const ws=d<0?480:320;
+      if(ad>ws) h+=2.2*Math.pow((ad-ws)/100,1.6);
+      h+=1.1*(vnoise(x/140,y/100)-.5);
+      if(d>0&&x>600&&x<1100) h+=1.1*Math.exp(-((ad-55)*(ad-55))/(2*22*22))*Math.sin(Math.PI*(x-600)/500);
+      h-=1.3*Math.exp(-(((x-1700)*(x-1700))/(2*160*160)+((y-(yc[i]-230))*(y-(yc[i]-230)))/(2*70*70)));
+      z[j*NX+i]=h; isCh[j*NX+i]=ad<bw+6?1:0;
+      if(h<zmin){zmin=h;jm=j;}
+    }
+    thal[i]=zmin; jth[i]=jm;
+  }
+  // flow direction follows the valley (channel centreline tangent)
+  for(let i=0;i<NX;i++){
+    const a=Math.max(0,i-1), b=Math.min(NX-1,i+1);
+    const s=(yc[b]-yc[a])/((b-a)*DX), n=Math.sqrt(1+s*s);
+    terr.dirX[i]=1/n; terr.dirY[i]=s/n;
+  }
+}
+function buildBase(S0){
+  const z=terr.z;
+  for(let py=0;py<H;py++){
+    const fy=(py+.5)/SC-.5, j0=clamp(Math.floor(fy),0,NY-1), j1=Math.min(NY-1,j0+1), ty=clamp(fy-j0,0,1);
+    for(let px=0;px<W;px++){
+      const fx=(px+.5)/SC-.5, i0=clamp(Math.floor(fx),0,NX-1), i1=Math.min(NX-1,i0+1), tx=clamp(fx-i0,0,1);
+      const a=z[j0*NX+i0],b=z[j0*NX+i1],c=z[j1*NX+i0],d=z[j1*NX+i1];
+      zPix[py*W+px]=a*(1-tx)*(1-ty)+b*tx*(1-ty)+c*(1-tx)*ty+d*tx*ty;
+    }
+  }
+  const ps=DX/SC, ex=4, ln=Math.sqrt(.25+.25+.49), lx=-.5/ln, ly=-.5/ln, lz=.7/ln;
+  for(let py=0;py<H;py++){
+    const ya=py>0?py-1:py, yb=py<H-1?py+1:py;
+    for(let px=0;px<W;px++){
+      const k=py*W+px, xa=px>0?px-1:px, xb=px<W-1?px+1:px;
+      const dzdx=(zPix[py*W+xb]-zPix[py*W+xa])/((xb-xa)*ps);
+      const dzdy=(zPix[yb*W+px]-zPix[ya*W+px])/((yb-ya)*ps);
+      const nx=-ex*dzdx, ny=-ex*dzdy, nl=Math.sqrt(nx*nx+ny*ny+1);
+      const sh=Math.max(0,(nx*lx+ny*ly+lz)/nl), f=.55+.6*sh;
+      const bed=100-S0*((px+.5)/SC)*DX, t=clamp((zPix[k]-bed)/9,0,1);
+      base[3*k]  =(208+(190-208)*t)*f;
+      base[3*k+1]=(220+(168-220)*t)*f;
+      base[3*k+2]=(196+(130-196)*t)*f;
+    }
+  }
+}
+
+/* ---------- hydraulics ---------- */
+function gumbelK(T){return -(Math.sqrt(6)/Math.PI)*(0.5772157+Math.log(Math.log(T/(T-1))));}
+function stage(Q,P){
+  const {z,isCh}=terr, w=new Float32Array(NX), sq=Math.sqrt(P.S0);
+  for(let i=0;i<NX;i++){
+    let lo=terr.thal[i], hi=lo+30;
+    for(let it=0;it<42;it++){
+      const m=(lo+hi)/2; let K=0;
+      for(let j=0;j<NY;j++){
+        const h=m-z[j*NX+i];
+        if(h>0){const c=Math.cbrt(h); K+=h*c*c/(isCh[j*NX+i]?P.nc:P.nf)*DX;}
+      }
+      if(K*sq<Q) lo=m; else hi=m;
+    }
+    w[i]=(lo+hi)/2;
+  }
+  const s=new Float32Array(NX);
+  for(let i=0;i<NX;i++){let a=0,c=0;for(let k=-6;k<=6;k++){const ii=i+k;if(ii>=0&&ii<NX){a+=w[ii];c++;}}s[i]=a/c;}
+  return s;
+}
+function floodMask(w){
+  const z=terr.z, mask=new Uint8Array(NX*NY), q=new Int32Array(NX*NY);
+  let qh=0,qt=0;
+  for(let i=0;i<NX;i++){const k=terr.jth[i]*NX+i; if(w[i]-z[k]>0.05){mask[k]=1;q[qt++]=k;}}
+  while(qh<qt){
+    const k=q[qh++], i=k%NX, j=(k/NX)|0;
+    if(i>0){const n=k-1;   if(!mask[n]&&w[i-1]-z[n]>0.05){mask[n]=1;q[qt++]=n;}}
+    if(i<NX-1){const n=k+1;if(!mask[n]&&w[i+1]-z[n]>0.05){mask[n]=1;q[qt++]=n;}}
+    if(j>0){const n=k-NX;  if(!mask[n]&&w[i]-z[n]>0.05){mask[n]=1;q[qt++]=n;}}
+    if(j<NY-1){const n=k+NX;if(!mask[n]&&w[i]-z[n]>0.05){mask[n]=1;q[qt++]=n;}}
+  }
+  return mask;
+}
+function dilate(mask){
+  const o=new Uint8Array(NX*NY);
+  for(let j=0;j<NY;j++)for(let i=0;i<NX;i++){
+    if(!mask[j*NX+i])continue;
+    for(let dj=-1;dj<=1;dj++)for(let di=-1;di<=1;di++){
+      const ii=i+di,jj=j+dj; if(ii>=0&&ii<NX&&jj>=0&&jj<NY) o[jj*NX+ii]=1;
+    }
+  }
+  return o;
+}
+
+/* ---------- results per return period ---------- */
+const res=TS.map(T=>({T,Q:0,w:null,mask:null,vel:new Float32Array(NX*NY),wetList:new Int32Array(0),depth:new Float32Array(W*H),area:0,mean:0,max:0,vol:0}));
+
+function readParams(){
+  const num=(id,def,a,b)=>{const v=parseFloat($(id).value);return Number.isFinite(v)?clamp(v,a,b):def;};
+  cur.src=$('srcSel').value;
+  cur.mean=num('pMean',DEFAULTS.mean,5,50000);
+  cur.cv=num('pCv',DEFAULTS.cv,0.05,2);
+  cur.S0=num('pS0',DEFAULTS.S0,0.0002,0.02);
+  cur.nc=num('pNc',DEFAULTS.nc,0.01,0.2);
+  cur.nf=num('pNf',DEFAULTS.nf,0.01,0.3);
+  cur.cap=num('pCap',DEFAULTS.cap,0.5,20);
+}
+function gumbelQs(){return TS.map(T=>Math.max(0.05*cur.mean,cur.mean*(1+gumbelK(T)*cur.cv)));}
+function getQs(){
+  if(cur.src==='manual'){
+    return TS.map((T,i)=>{const v=parseFloat($('qm'+i).value);return Number.isFinite(v)&&v>0?v:1;});
+  }
+  return gumbelQs();
+}
+function solveAll(){
+  const Qs=getQs();
+  const ps2=(DX/SC)*(DX/SC), wp=new Float32Array(W), z=terr.z, sq=Math.sqrt(cur.S0);
+  res.forEach((r,ti)=>{
+    r.Q=Qs[ti]; r.w=stage(r.Q,cur); r.mask=floodMask(r.w);
+    // local velocity (Manning, same conveyance as the stage solver) and list of wet cells
+    const wl=[]; r.vel.fill(0);
+    for(let j=0;j<NY;j++)for(let i=0;i<NX;i++){
+      const c=j*NX+i; if(!r.mask[c])continue;
+      const h=r.w[i]-z[c]; if(h<=0.05)continue;
+      const cb=Math.cbrt(h);
+      r.vel[c]=cb*cb*sq/(terr.isCh[c]?cur.nc:cur.nf);
+      wl.push(c);
+    }
+    r.wetList=Int32Array.from(wl);
+    const mk=dilate(r.mask), w=r.w;
+    for(let px=0;px<W;px++){
+      const fx=(px+.5)/SC-.5, i0=clamp(Math.floor(fx),0,NX-1), i1=Math.min(NX-1,i0+1), t=clamp(fx-i0,0,1);
+      wp[px]=w[i0]*(1-t)+w[i1]*t;
+    }
+    let cnt=0,sum=0,mx=0; const dep=r.depth;
+    for(let py=0;py<H;py++){
+      const cj=Math.min(NY-1,(py/SC)|0);
+      for(let px=0;px<W;px++){
+        const k=py*W+px, ci=Math.min(NX-1,(px/SC)|0);
+        let d=0;
+        if(mk[cj*NX+ci]){d=wp[px]-zPix[k]; if(d<=0.03)d=0;}
+        dep[k]=d;
+        if(d>0){cnt++;sum+=d;if(d>mx)mx=d;}
+      }
+    }
+    r.area=cnt*ps2; r.vol=sum*ps2; r.mean=cnt?sum/cnt:0; r.max=mx;
+  });
+}
+
+/* ---------- colours ---------- */
+function makeLUT(stops){
+  const lut=new Uint8ClampedArray(256*3);
+  for(let i=0;i<256;i++){
+    const t=i/255; let k=0; while(k<stops.length-2&&t>stops[k+1][0])k++;
+    const [t0,c0]=stops[k],[t1,c1]=stops[k+1], u=clamp((t-t0)/(t1-t0),0,1);
+    for(let c=0;c<3;c++) lut[3*i+c]=c0[c]+(c1[c]-c0[c])*u;
+  }
+  return lut;
+}
+const DEPTH_STOPS=[[0,[190,232,250]],[.12,[125,206,240]],[.3,[50,152,216]],[.55,[28,102,182]],[.78,[40,62,152]],[1,[72,24,112]]];
+const DIFF_STOPS=[[0,[254,224,139]],[.5,[253,141,60]],[1,[140,10,20]]];
+const LUT=makeLUT(DEPTH_STOPS), LUTD=makeLUT(DIFF_STOPS);
+const cssGrad=stops=>'linear-gradient(to right,'+stops.map(s=>`rgb(${s[1].join(',')}) ${s[0]*100}%`).join(',')+')';
+
+/* ---------- map rendering ---------- */
+const cv=$('map'); cv.width=W; cv.height=H;
+const ctx=cv.getContext('2d');
+const acv=$('arrows'); acv.width=W; acv.height=H; const actx=acv.getContext('2d');
+const fcv=$('flow');   fcv.width=W; fcv.height=H; const fctx=fcv.getContext('2d');
+const imgData=ctx.createImageData(W,H);
+const out=new Float32Array(3);
+
+function mix(r,g,b,a){out[0]=out[0]*(1-a)+r*a;out[1]=out[1]*(1-a)+g*a;out[2]=out[2]*(1-a)+b*a;}
+function layerPixel(k,x,y,ti,layer){
+  out[0]=base[3*k];out[1]=base[3*k+1];out[2]=base[3*k+2];
+  const dd=res[ti].depth, d=dd[k]; if(d<=0)return;
+  if(layer==='depth'){
+    const i=Math.min(255,(d/cur.cap*255)|0)*3;
+    mix(LUT[i],LUT[i+1],LUT[i+2],Math.min(.92,.55+d*.6));
+  }else{
+    const edge=x>0&&x<W-1&&y>0&&y<H-1&&(dd[k-1]<=0||dd[k+1]<=0||dd[k-W]<=0||dd[k+W]<=0);
+    if(edge)mix(8,38,88,.95); else mix(60,150,215,.55);
+  }
+}
+function render(){
+  const d=imgData.data, mode=st.mode;
+  const rA=res[st.A],rB=res[st.B];
+  for(let y=0;y<H;y++){
+    for(let x=0;x<W;x++){
+      const k=y*W+x;
+      if(mode==='depth')layerPixel(k,x,y,st.ti,'depth');
+      else if(mode==='extent')layerPixel(k,x,y,st.ti,'extent');
+      else if(mode==='compare')layerPixel(k,x,y,x<st.split?st.A:st.B,st.layer);
+      else if(mode==='layers'){
+        out[0]=base[3*k];out[1]=base[3*k+1];out[2]=base[3*k+2];
+        for(let t=0;t<NT;t++){ if(res[t].depth[k]>0){const c=TRGB[t];mix(c[0],c[1],c[2],.78);break;} }
+      }else{ // diff
+        out[0]=base[3*k];out[1]=base[3*k+1];out[2]=base[3*k+2];
+        let a=rA.depth[k],b=rB.depth[k]; if(a>b){const s=a;a=b;b=s;}
+        if(b>0){
+          if(a<=0)mix(226,52,122,.82);
+          else{const i=Math.min(255,((b-a)/Math.max(.25,cur.cap/2)*255)|0)*3;mix(LUTD[i],LUTD[i+1],LUTD[i+2],.85);}
+        }
+      }
+      const o=4*k; d[o]=out[0];d[o+1]=out[1];d[o+2]=out[2];d[o+3]=255;
+    }
+  }
+  ctx.putImageData(imgData,0,0);
+  drawOverlays();
+  drawArrows();
+}
+function halo(txt,x,y,align){
+  ctx.textAlign=align||'left';ctx.lineWidth=3;ctx.strokeStyle='rgba(255,255,255,.9)';ctx.strokeText(txt,x,y);ctx.fillStyle='#12263a';ctx.fillText(txt,x,y);
+}
+function chip(txt,x,y,align,color){
+  ctx.font='600 13px '+FONT;
+  const tw=ctx.measureText(txt).width+16, x0=align==='right'?x-tw:x;
+  ctx.fillStyle='rgba(255,255,255,.92)';ctx.fillRect(x0,y,tw,24);
+  ctx.fillStyle=color;ctx.fillRect(x0,y,4,24);
+  ctx.fillStyle='#12263a';ctx.textAlign='left';ctx.fillText(txt,x0+10,y+16.5);
+}
+function drawOverlays(){
+  const sx=(st.station+.5)*SC;
+  ctx.save();ctx.setLineDash([6,4]);ctx.lineWidth=2;ctx.strokeStyle='#12263a';
+  ctx.beginPath();ctx.moveTo(sx,0);ctx.lineTo(sx,H);ctx.stroke();ctx.restore();
+  ctx.font='600 12px '+FONT;
+  halo('Cross-section',Math.min(sx+6,W-96),16,'left');
+  ctx.font='12px '+FONT;
+  halo('Flow direction \u2192',10,H-10,'left');
+  const bar=500/DX*SC, bx=W-bar-14, by=H-18;
+  ctx.fillStyle='rgba(255,255,255,.9)';ctx.fillRect(bx-6,by-16,bar+12,30);
+  ctx.fillStyle='#12263a';ctx.fillRect(bx,by,bar,4);
+  ctx.font='11px '+FONT;ctx.textAlign='left';ctx.fillText('0',bx,by-4);ctx.textAlign='right';ctx.fillText('500 m',bx+bar,by-4);
+  if(st.mode==='compare'){
+    ctx.save();ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(st.split,0);ctx.lineTo(st.split,H);ctx.stroke();
+    ctx.fillStyle='#fff';ctx.strokeStyle='#12263a';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(st.split,H/2,13,0,6.283);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#12263a';ctx.font='700 13px '+FONT;ctx.textAlign='center';ctx.fillText('\u2194',st.split,H/2+4.5);ctx.restore();
+    chip('A: T = '+TS[st.A]+' years',10,34,'left',TCOL[st.A]);
+    chip('B: T = '+TS[st.B]+' years',W-10,34,'right',TCOL[st.B]);
+  }
+  if(st.mode==='diff') chip('B ('+TS[st.B]+' yr) \u2212 A ('+TS[st.A]+' yr)',10,34,'left','#ee5a36');
+  if(st.mode==='depth'||st.mode==='extent'||st.mode==='layers') chip('T = '+TS[st.ti]+' years',10,34,'left',TCOL[st.ti]);
+}
+
+/* ---------- flow field: which data set drives the flow at a pixel/cell ---------- */
+function flowSet(xCell){
+  if(st.mode==='compare') return (xCell*SC<st.split)?st.A:st.B;
+  if(st.mode==='diff') return st.B;
+  return st.ti;
+}
+
+/* ---------- flow arrows (static, HEC-RAS style vectors) ---------- */
+function arrow(g,x,y,dx,dy,L){
+  const hx=x+dx*L/2, hy=y+dy*L/2, tx=x-dx*L/2, ty=y-dy*L/2, hs=Math.min(6,L*.38);
+  const bx=hx-dx*hs, by=hy-dy*hs, nx=-dy*hs*.55, ny=dx*hs*.55;
+  g.beginPath();g.moveTo(tx,ty);g.lineTo(hx,hy);g.moveTo(hx,hy);g.lineTo(bx+nx,by+ny);g.moveTo(hx,hy);g.lineTo(bx-nx,by-ny);g.stroke();
+}
+function drawArrows(){
+  actx.clearRect(0,0,W,H);
+  if(!st.arrows||!res[0].w)return;
+  actx.lineCap='round';actx.lineJoin='round';
+  const pts=[];
+  for(let j=4;j<NY;j+=8)for(let i=4;i<NX;i+=8){
+    const ti=flowSet(i+.5), v=res[ti].vel[j*NX+i];
+    if(v<=0)continue;
+    pts.push([(i+.5)*SC,(j+.5)*SC,terr.dirX[i],terr.dirY[i],clamp(8+9*v,8,30)]);
+  }
+  actx.strokeStyle='rgba(255,255,255,.95)';actx.lineWidth=3.6;
+  pts.forEach(p=>arrow(actx,p[0],p[1],p[2],p[3],p[4]));
+  actx.strokeStyle='#0b1d33';actx.lineWidth=1.5;
+  pts.forEach(p=>arrow(actx,p[0],p[1],p[2],p[3],p[4]));
+}
+
+/* ---------- animated flow (tracer particles with fading trails) ---------- */
+const FN=4000;
+const P={x:new Float32Array(FN),y:new Float32Array(FN),age:new Uint16Array(FN),on:new Uint8Array(FN)};
+let pCount=0, animRaf=0;
+function spawn(n){
+  let ti=st.mode==='compare'?(Math.random()<.5?st.A:st.B):flowSet(0);
+  const list=res[ti].wetList; if(!list.length){P.on[n]=0;return;}
+  for(let tries=0;tries<8;tries++){
+    const c=list[(Math.random()*list.length)|0], i=c%NX, j=(c/NX)|0, x=i+Math.random(), y=j+Math.random();
+    if(st.mode==='compare'&&flowSet(x)!==ti)continue;
+    P.x[n]=x;P.y[n]=y;P.age[n]=(Math.random()*140)|0;P.on[n]=1;return;
+  }
+  P.on[n]=0;
+}
+function resetParticles(){
+  fctx.clearRect(0,0,W,H);
+  if(!res[0].w)return;
+  let wet=0;
+  if(st.mode==='compare')wet=(res[st.A].wetList.length+res[st.B].wetList.length)/2;
+  else wet=res[flowSet(0)].wetList.length;
+  pCount=clamp(Math.round(wet/3),400,FN);
+  for(let n=0;n<FN;n++){ if(n<pCount)spawn(n); else P.on[n]=0; }
+  startAnim();
+}
+function startAnim(){ if(st.animate&&!animRaf)animRaf=requestAnimationFrame(flowFrame); }
+function flowFrame(){
+  animRaf=0;
+  if(!st.animate||!res[0].w)return;
+  fctx.globalCompositeOperation='destination-out';
+  fctx.fillStyle='rgba(0,0,0,0.16)';fctx.fillRect(0,0,W,H);
+  fctx.globalCompositeOperation='source-over';
+  fctx.lineCap='round';fctx.strokeStyle='rgba(255,255,255,0.95)';fctx.lineWidth=1.5;
+  fctx.beginPath();
+  const k=0.45*st.fspeed;
+  for(let n=0;n<pCount;n++){
+    if(!P.on[n]){spawn(n);continue;}
+    const x=P.x[n], y=P.y[n], i=x|0, j=y|0;
+    if(x<0||i>=NX||y<0||j>=NY||P.age[n]>260){spawn(n);continue;}
+    const v=res[flowSet(x)].vel[j*NX+i];
+    if(v<=0){spawn(n);continue;}
+    const step=Math.min(v*k,1.2);
+    const nx=x+terr.dirX[i]*step, ny=y+terr.dirY[i]*step+(Math.random()-.5)*0.03;
+    fctx.moveTo(x*SC,y*SC);fctx.lineTo(nx*SC,ny*SC);
+    P.x[n]=nx;P.y[n]=ny;P.age[n]++;
+  }
+  fctx.stroke();
+  animRaf=requestAnimationFrame(flowFrame);
+}
+
+/* ---------- legend ---------- */
+function updateLegend(){
+  const el=$('legend'); let h='';
+  const depthLeg=()=>`<div>Depth (m)</div><div class="bar" style="background:${cssGrad(DEPTH_STOPS)}"></div><div class="ticks"><span>0</span><span>${fmt(cur.cap/2,1)}</span><span>\u2265 ${fmt(cur.cap,1)}</span></div>`;
+  const extLeg=`<span class="row"><i class="sw" style="background:rgba(60,150,215,.7)"></i>Flooded</span>`;
+  if(st.mode==='depth')h=depthLeg();
+  else if(st.mode==='extent')h=extLeg;
+  else if(st.mode==='layers')h='<div>First flooded at:</div>'+TS.map((T,i)=>`<span class="row"><i class="sw" style="background:${TCOL[i]}"></i>T ${T}</span>`).join('');
+  else if(st.mode==='compare')h=(st.layer==='depth'?depthLeg():extLeg)+'<div>Left: A, right: B</div>';
+  else h=`<span class="row"><i class="sw" style="background:rgb(226,52,122)"></i>Newly flooded</span><div>Depth increase (m)</div><div class="bar" style="background:${cssGrad(DIFF_STOPS)}"></div><div class="ticks"><span>0</span><span>${fmt(Math.max(.25,cur.cap/2)/2,2)}</span><span>\u2265 ${fmt(Math.max(.25,cur.cap/2),2)}</span></div>`;
+  if(st.arrows)h+='<div class="note">Arrows: flow direction, longer = faster</div>';
+  el.innerHTML=h;
+}
+
+/* ---------- summary, table, section ---------- */
+function updateSummary(){
+  const el=$('summary');
+  if(st.mode!=='compare'&&st.mode!=='diff'){el.classList.remove('on');return;}
+  let a=res[st.A],b=res[st.B],ia=st.A,ib=st.B;
+  if(a.area>b.area){const s=a;a=b;b=s;const t=ia;ia=ib;ib=t;}
+  let nw=0; const da=a.depth,db=b.depth;
+  for(let k=0;k<W*H;k++) if(db[k]>0&&da[k]<=0)nw++;
+  const nwha=nw*(DX/SC)*(DX/SC)/1e4, aha=a.area/1e4, bha=b.area/1e4;
+  const pct=aha>0?(bha/aha-1)*100:0;
+  el.textContent=`T ${TS[ib]} yr vs T ${TS[ia]} yr: flood area ${fmt(bha)} ha vs ${fmt(aha)} ha (${pct>=0?'+':''}${fmt(pct,0)}%), newly flooded ${fmt(nwha)} ha, mean depth ${fmt(b.mean,2)} m vs ${fmt(a.mean,2)} m, max depth ${fmt(b.max,2)} m vs ${fmt(a.max,2)} m.`;
+  el.classList.add('on');
+}
+function updateTable(){
+  $('tbody').innerHTML=res.map((r,i)=>{
+    const tags=(st.mode==='compare'||st.mode==='diff')?(i===st.A?'<span class="tag">A</span>':'')+(i===st.B?'<span class="tag">B</span>':''):'';
+    return `<tr data-i="${i}" class="${i===st.ti?'sel':''}"><td>T = ${r.T} years${tags}</td><td>${fmt(r.Q,0)}</td><td>${fmt(r.area/1e4)}</td><td>${fmt(r.mean,2)}</td><td>${fmt(r.max,2)}</td><td>${fmt(r.vol/1e3,0)}</td></tr>`;
+  }).join('');
+}
+function updateGauge(){
+  const qmax=Math.max(...res.map(r=>r.Q));
+  [...$('gauge').children].forEach((b,i)=>{
+    b.setAttribute('aria-pressed',String(i===st.ti));
+    b.querySelector('.q').textContent=fmt(res[i].Q,0)+' m\u00b3/s';
+    b.querySelector('.lv').style.width=(res[i].Q/qmax*100)+'%';
+  });
+}
+function sectionStats(ti,i){
+  const r=res[ti], z=terr.z; let A=0,B=0,hm=0;
+  for(let j=0;j<NY;j++){
+    if(!r.mask[j*NX+i])continue;
+    const h=r.w[i]-z[j*NX+i]; if(h>0){A+=h*DX;B+=DX;if(h>hm)hm=h;}
+  }
+  const V=A>0?r.Q/A:0, Fr=A>0?V/Math.sqrt(G*A/B):0;
+  return {A,B,hm,V,Fr,wse:r.w[i]};
+}
+function updateSection(){
+  if(!res[0].w)return;
+  const i=st.station, s=sectionStats(st.ti,i), r=res[st.ti];
+  $('secInfo').innerHTML=
+    `<dt>Distance from upstream</dt><dd>${fmt((i+.5)*DX,0)} m</dd>`+
+    `<dt>Return period</dt><dd>${r.T} years</dd>`+
+    `<dt>Discharge</dt><dd>${fmt(r.Q,0)} m\u00b3/s</dd>`+
+    `<dt>Channel bed elevation</dt><dd>${fmt(terr.thal[i],2)} m</dd>`+
+    `<dt>Water surface elevation</dt><dd>${fmt(s.wse,2)} m</dd>`+
+    `<dt>Max depth</dt><dd>${fmt(s.hm,2)} m</dd>`+
+    `<dt>Top width</dt><dd>${fmt(s.B,0)} m</dd>`+
+    `<dt>Flow area</dt><dd>${fmt(s.A,0)} m\u00b2</dd>`+
+    `<dt>Mean velocity</dt><dd>${fmt(s.V,2)} m/s</dd>`+
+    `<dt>Froude number</dt><dd>${fmt(s.Fr,2)}</dd>`;
+  $('station').value=i;
+}
+
+/* ---------- charts ---------- */
+function niceTicks(a,b,n){
+  const span=b-a, s0=span/n, mag=Math.pow(10,Math.floor(Math.log10(s0))), f=s0/mag;
+  const step=(f<1.5?1:f<3?2:f<7?5:10)*mag, t=[];
+  for(let v=Math.ceil(a/step-1e-9)*step;v<=b+1e-9;v+=step)t.push(+v.toFixed(10));
+  return t;
+}
+function plotSetup(){
+  const c=$('plot'), w=Math.max(300,Math.round(c.getBoundingClientRect().width)), h=Math.round(clamp(w*.42,270,400)), dpr=window.devicePixelRatio||1;
+  c.style.height=h+'px'; c.width=Math.round(w*dpr); c.height=Math.round(h*dpr);
+  const g=c.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,w,h);
+  return {g,w,h};
+}
+function drawAxes(g,box,x0,x1,y0,y1,xl,yl,noX){
+  const {l,t,r,b}=box, X=v=>l+(v-x0)/(x1-x0)*(r-l), Y=v=>b-(v-y0)/(y1-y0)*(b-t);
+  const grid=cssv('--grid'), muted=cssv('--muted');
+  g.font='11px '+FONT; g.lineWidth=1; g.strokeStyle=grid; g.fillStyle=muted;
+  g.textAlign='right';
+  niceTicks(y0,y1,5).forEach(v=>{const y=Y(v);g.beginPath();g.moveTo(l,y);g.lineTo(r,y);g.stroke();g.fillText(fmt(v,v%1?1:0),l-6,y+4);});
+  if(!noX){g.textAlign='center';niceTicks(x0,x1,7).forEach(v=>{const x=X(v);g.beginPath();g.moveTo(x,t);g.lineTo(x,b);g.stroke();g.fillText(fmt(v,0),x,b+15);});}
+  g.strokeStyle=muted;g.beginPath();g.moveTo(l,t);g.lineTo(l,b);g.lineTo(r,b);g.stroke();
+  g.fillStyle=muted;g.font='12px '+FONT;
+  if(xl){g.textAlign='center';g.fillText(xl,(l+r)/2,b+32);}
+  if(yl){g.save();g.translate(14,(t+b)/2);g.rotate(-Math.PI/2);g.textAlign='center';g.fillText(yl,0,0);g.restore();}
+  return {X,Y};
+}
+function setLegend(items){
+  $('plegend').innerHTML=items.map(it=>`<span><i style="background:${it[0]}"></i>${it[1]}</span>`).join('');
+}
+function drawPlot(){
+  if(!res[0].w)return;
+  const {g,w,h}=plotSetup(), ink=cssv('--ink'), muted=cssv('--muted');
+  if(st.plot==='xs'){
+    const i=st.station, yc=terr.yc[i], ya=Math.max(0,yc-420), yb=Math.min(NY*DX,yc+420);
+    const ja=Math.floor(ya/DX), jb=Math.min(NY-1,Math.ceil(yb/DX));
+    let zmin=1e9; for(let j=ja;j<=jb;j++)zmin=Math.min(zmin,terr.z[j*NX+i]);
+    const y0=zmin-.5, y1=res[LAST].w[i]+1.6;
+    const box={l:56,t:12,r:w-14,b:h-44};
+    const {X,Y}=drawAxes(g,box,ja*DX,(jb+1)*DX,y0,y1,'Cross-channel distance (m)','Elevation (m)');
+    const sel=res[st.ti], cw=(box.r-box.l)/((jb-ja+1))+.6;
+    g.fillStyle='rgba(47,150,215,.55)';
+    for(let j=ja;j<=jb;j++){
+      if(!sel.mask[j*NX+i])continue; const z=terr.z[j*NX+i], d=sel.w[i]-z; if(d<=0)continue;
+      g.fillRect(X(j*DX),Y(sel.w[i]),cw,Y(Math.max(z,y0))-Y(sel.w[i]));
+    }
+    g.beginPath();g.moveTo(X(ja*DX),box.b);
+    for(let j=ja;j<=jb;j++)g.lineTo(X((j+.5)*DX),Y(Math.max(terr.z[j*NX+i],y0)));
+    g.lineTo(X((jb+1)*DX),box.b);g.closePath();g.fillStyle=cssv('--ground');g.fill();
+    g.strokeStyle=ink;g.lineWidth=1.4;g.beginPath();
+    for(let j=ja;j<=jb;j++){const x=X((j+.5)*DX),y=Y(Math.max(terr.z[j*NX+i],y0));j===ja?g.moveTo(x,y):g.lineTo(x,y);}
+    g.stroke();
+    const items=[];
+    TS.forEach((T,t)=>{
+      const r=res[t]; let f=-1,l=-1;
+      for(let j=ja;j<=jb;j++) if(r.mask[j*NX+i]&&r.w[i]-terr.z[j*NX+i]>0){if(f<0)f=j;l=j;}
+      if(f>=0){
+        g.save();g.strokeStyle=TCOL[t];g.lineWidth=t===st.ti?3:1.6;if(t!==st.ti)g.setLineDash([5,3]);
+        g.beginPath();g.moveTo(X(f*DX),Y(r.w[i]));g.lineTo(X((l+1)*DX),Y(r.w[i]));g.stroke();g.restore();
+      }
+      items.push([TCOL[t],`T ${T}: ${fmt(r.w[i],2)} m`]);
+    });
+    setLegend(items);
+  }else if(st.plot==='prof'){
+    const x1=NX*DX; let y0=1e9,y1=-1e9;
+    for(let i=0;i<NX;i++){y0=Math.min(y0,terr.thal[i]);y1=Math.max(y1,res[LAST].w[i]);}
+    y0-=.5;y1+=1;
+    const box={l:56,t:12,r:w-14,b:h-44};
+    const {X,Y}=drawAxes(g,box,0,x1,y0,y1,'Distance from upstream (m)','Elevation (m)');
+    g.strokeStyle=ink;g.lineWidth=1.8;g.beginPath();
+    for(let i=0;i<NX;i++){const x=X((i+.5)*DX),y=Y(terr.thal[i]);i?g.lineTo(x,y):g.moveTo(x,y);}g.stroke();
+    TS.forEach((T,t)=>{
+      g.save();g.strokeStyle=TCOL[t];g.lineWidth=t===st.ti?3:1.4;if(t!==st.ti)g.setLineDash([5,3]);g.beginPath();
+      for(let i=0;i<NX;i++){const x=X((i+.5)*DX),y=Y(res[t].w[i]);i?g.lineTo(x,y):g.moveTo(x,y);}g.stroke();g.restore();
+    });
+    const sx=X((st.station+.5)*DX);g.save();g.setLineDash([4,4]);g.strokeStyle=muted;g.beginPath();g.moveTo(sx,box.t);g.lineTo(sx,box.b);g.stroke();g.restore();
+    setLegend([[ink,'Channel bed'],...TS.map((T,t)=>[TCOL[t],'Water surface T '+T])]);
+  }else{
+    const maxA=Math.max(...res.map(r=>r.area/1e4)), maxD=Math.max(...res.map(r=>r.mean));
+    const box={l:56,t:16,r:w-56,b:h-44};
+    const {X,Y}=drawAxes(g,box,0,NT,0,maxA*1.18,'Return period (years)','Flood area (ha)',true);
+    const bw=(box.r-box.l)/NT, Yd=v=>box.b-v/(maxD*1.3)*(box.b-box.t);
+    g.font='11px '+FONT;
+    res.forEach((r,i)=>{
+      const x=box.l+i*bw+bw*.2, ww=bw*.6, y=Y(r.area/1e4);
+      g.fillStyle=i===st.ti?cssv('--accent'):'rgba(76,150,200,.45)';
+      g.fillRect(x,y,ww,box.b-y);
+      g.fillStyle=ink;g.textAlign='center';g.fillText(fmt(r.area/1e4),x+ww/2,y-5);
+      g.fillStyle=muted;g.font='12px '+FONT;g.fillText(String(r.T),x+ww/2,box.b+16);g.font='11px '+FONT;
+    });
+    const warn=cssv('--warn');
+    g.strokeStyle=warn;g.lineWidth=2.2;g.beginPath();
+    res.forEach((r,i)=>{const x=box.l+i*bw+bw/2,y=Yd(r.mean);i?g.lineTo(x,y):g.moveTo(x,y);});g.stroke();
+    g.fillStyle=warn;
+    res.forEach((r,i)=>{const x=box.l+i*bw+bw/2,y=Yd(r.mean);g.beginPath();g.arc(x,y,4,0,6.283);g.fill();g.textAlign='center';g.fillText(fmt(r.mean,2),x,y-9);});
+    g.fillStyle=warn;g.textAlign='left';
+    niceTicks(0,maxD*1.3,5).forEach(v=>g.fillText(fmt(v,1),box.r+6,Yd(v)+4));
+    g.save();g.translate(w-8,(box.t+box.b)/2);g.rotate(Math.PI/2);g.textAlign='center';g.font='12px '+FONT;g.fillText('Mean depth (m)',0,0);g.restore();
+    setLegend([['rgba(76,150,200,.8)','Flood area (ha)'],[warn,'Mean depth (m)']]);
+  }
+}
+
+/* ---------- interaction ---------- */
+let raf=0;
+function refreshView(){
+  if(raf)return;
+  raf=requestAnimationFrame(()=>{raf=0;if(!res[0].w)return;render();updateSection();drawPlot();});
+}
+function refreshAll(){
+  updateGauge();updateTable();updateLegend();updateSummary();render();updateSection();drawPlot();resetParticles();
+}
+function recompute(){
+  $('status').textContent='Computing\u2026';
+  setTimeout(()=>{
+    readParams();
+    if(cur.S0!==lastS0){buildTerrain(cur.S0);buildBase(cur.S0);lastS0=cur.S0;}
+    solveAll();
+    refreshAll();
+    $('status').textContent='Done.';
+    setTimeout(()=>{if($('status').textContent==='Done.')$('status').textContent='';},1500);
+  },10);
+}
+let deb=0; const schedule=()=>{clearTimeout(deb);deb=setTimeout(recompute,220);};
+
+function buildUI(){
+  $('gauge').innerHTML=TS.map((T,i)=>`<button type="button" class="t-btn" data-i="${i}" aria-pressed="${i===st.ti}"><span class="n">${T}</span><span class="u">years</span><span class="q"></span><span class="lv"></span></button>`).join('');
+  const opts=TS.map((T,i)=>`<option value="${i}">T = ${T} years</option>`).join('');
+  $('selA').innerHTML=opts;$('selB').innerHTML=opts;$('selA').value=st.A;$('selB').value=st.B;
+  $('manualFields').innerHTML=TS.map((T,i)=>`<div class="field"><label for="qm${i}">Q for T = ${T} years (m\u00b3/s)</label><input id="qm${i}" type="number" min="1" step="10" value="${Math.round(gumbelQs()[i])}"></div>`).join('');
+  $('chkAnim').checked=st.animate;
+}
+buildUI();
+function setMode(m){
+  st.mode=m;
+  document.querySelectorAll('#modes button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===m)));
+  const cmp=m==='compare'||m==='diff';
+  $('cmpctl').classList.toggle('on',cmp);
+  $('layerCtl').style.display=m==='compare'?'':'none';
+  $('splitCtl').style.display=m==='compare'?'':'none';
+  updateLegend();updateSummary();updateTable();refreshView();resetParticles();
+}
+function pointerToCell(e){
+  const r=cv.getBoundingClientRect();
+  const px=clamp(Math.floor((e.clientX-r.left)/r.width*W),0,W-1), py=clamp(Math.floor((e.clientY-r.top)/r.height*H),0,H-1);
+  return {px,py};
+}
+let dragging=false;
+function applyPointer(e){
+  const {px}=pointerToCell(e);
+  if(st.mode==='compare'){st.split=px;$('split').value=Math.round(px/W*100);}
+  else st.station=clamp(Math.floor(px/SC),0,NX-1);
+  refreshView();
+}
+const HOVER_DEFAULT='Move the cursor over the map to read elevation, depth and velocity. Click to choose a cross-section.';
+cv.addEventListener('pointerdown',e=>{dragging=true;cv.setPointerCapture(e.pointerId);applyPointer(e);});
+cv.addEventListener('pointerup',()=>{dragging=false;});
+cv.addEventListener('pointercancel',()=>{dragging=false;});
+cv.addEventListener('pointermove',e=>{
+  if(dragging)applyPointer(e);
+  if(!res[0].w)return;
+  const {px,py}=pointerToCell(e), k=py*W+px, c=Math.min(NY-1,(py/SC)|0)*NX+Math.min(NX-1,(px/SC)|0);
+  const x=(px+.5)/SC*DX, y=(py+.5)/SC*DX;
+  let t=`<b>x</b> ${fmt(x,0)} m, <b>y</b> ${fmt(y,0)} m, <b>ground</b> ${fmt(zPix[k],2)} m`;
+  if(st.mode==='compare'||st.mode==='diff'){
+    t+=`, <b>depth A (T ${TS[st.A]})</b> ${fmt(res[st.A].depth[k],2)} m, <b>B (T ${TS[st.B]})</b> ${fmt(res[st.B].depth[k],2)} m`;
+  }else if(st.mode==='layers'){
+    t+=', <b>depth</b> '+TS.map((T,i)=>`T${T}: ${fmt(res[i].depth[k],2)}`).join(' | ')+' m';
+  }else t+=`, <b>depth T ${TS[st.ti]}</b> ${fmt(res[st.ti].depth[k],2)} m, <b>velocity</b> ${fmt(res[st.ti].vel[c],2)} m/s`;
+  $('readout').innerHTML=t;
+});
+cv.addEventListener('pointerleave',()=>{$('readout').textContent=HOVER_DEFAULT;});
+
+$('gauge').addEventListener('click',e=>{const b=e.target.closest('.t-btn');if(!b)return;st.ti=+b.dataset.i;updateGauge();updateTable();updateLegend();refreshView();resetParticles();});
+$('modes').addEventListener('click',e=>{const b=e.target.closest('button');if(b)setMode(b.dataset.mode);});
+$('tbody').addEventListener('click',e=>{const r=e.target.closest('tr');if(!r)return;st.ti=+r.dataset.i;updateGauge();updateTable();refreshView();resetParticles();});
+$('selA').addEventListener('change',e=>{st.A=+e.target.value;updateSummary();updateTable();refreshView();resetParticles();});
+$('selB').addEventListener('change',e=>{st.B=+e.target.value;updateSummary();updateTable();refreshView();resetParticles();});
+document.querySelectorAll('input[name=layer]').forEach(r=>r.addEventListener('change',e=>{st.layer=e.target.value;updateLegend();refreshView();}));
+$('split').addEventListener('input',e=>{st.split=+e.target.value/100*W;refreshView();});
+$('station').addEventListener('input',e=>{st.station=+e.target.value;refreshView();});
+$('chkArrows').addEventListener('change',e=>{st.arrows=e.target.checked;updateLegend();drawArrows();});
+$('chkAnim').addEventListener('change',e=>{st.animate=e.target.checked;if(st.animate)resetParticles();else fctx.clearRect(0,0,W,H);});
+$('fspeed').addEventListener('input',e=>{st.fspeed=+e.target.value;});
+$('tabs').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;st.plot=b.dataset.plot;
+  document.querySelectorAll('#tabs button').forEach(x=>x.setAttribute('aria-selected',String(x===b)));drawPlot();
+});
+['pMean','pCv','pS0','pNc','pNf'].forEach(id=>$(id).addEventListener('input',schedule));
+$('pCap').addEventListener('input',()=>{readParams();updateLegend();refreshView();});
+$('srcSel').addEventListener('change',()=>{
+  const man=$('srcSel').value==='manual';
+  if(man){readParams();const q=gumbelQs();TS.forEach((T,i)=>{$('qm'+i).value=Math.round(q[i]);});}
+  $('manualBox').classList.toggle('on',man);$('gumbelBox').style.display=man?'none':'';
+  recompute();
+});
+TS.forEach((T,i)=>$('qm'+i).addEventListener('input',schedule));
+$('resetBtn').addEventListener('click',()=>{
+  $('srcSel').value='gumbel';$('manualBox').classList.remove('on');$('gumbelBox').style.display='';
+  $('pMean').value=DEFAULTS.mean;$('pCv').value=DEFAULTS.cv;$('pS0').value=DEFAULTS.S0;$('pNc').value=DEFAULTS.nc;$('pNf').value=DEFAULTS.nf;$('pCap').value=DEFAULTS.cap;
+  recompute();
+});
+$('csvBtn').addEventListener('click',()=>{
+  const rows=['return_period_years,discharge_m3s,area_ha,mean_depth_m,max_depth_m,volume_m3'];
+  res.forEach(r=>rows.push([r.T,r.Q.toFixed(1),(r.area/1e4).toFixed(2),r.mean.toFixed(3),r.max.toFixed(3),r.vol.toFixed(0)].join(',')));
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([rows.join('\n')],{type:'text/csv'}));a.download='flood-simulation-results.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+});
+$('pngBtn').addEventListener('click',()=>{
+  const t=document.createElement('canvas');t.width=W;t.height=H;const g=t.getContext('2d');
+  g.drawImage(cv,0,0);g.drawImage(acv,0,0);g.drawImage(fcv,0,0);
+  t.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='flood-map-'+st.mode+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);});
+});
+function currentTheme(){
+  return document.documentElement.dataset.theme||((window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light');
+}
+function themeLabel(){$('themeBtn').textContent=currentTheme()==='dark'?'Light mode':'Dark mode';}
+$('themeBtn').addEventListener('click',()=>{
+  document.documentElement.dataset.theme=currentTheme()==='dark'?'light':'dark';themeLabel();drawPlot();
+});
+let rz=0;window.addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(drawPlot,120);});
+
+/* ---------- start ---------- */
+themeLabel();
+setMode('depth');
+recompute();
+})();
+</script>
+</body>
+</html>

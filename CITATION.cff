@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Return-Period Flood Simulator"
+type: software
+version: 1.0.0
+date-released: 2026-10-08
+license: MIT
+authors:
+  - family-names: Hidayatulloh
+    given-names: Asep Muhammad
+abstract: "Browser-based educational flood simulation comparing flood extent, depth and flow direction for 2 to 200-year return periods."
+keywords:
+  - flood modelling
+  - return period
+  - hydraulics
+  - Manning equation
